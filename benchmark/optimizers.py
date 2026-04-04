@@ -226,16 +226,7 @@ def _create_dion2(model: nn.Module, config) -> Optimizer:
 
 def _create_adadion(model: nn.Module, config) -> Optimizer:
     """AdaDion V2 for matrix params + AdamW for scalars."""
-    # Import from the cloned torchtitan repo
-    benchmark_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.join(os.path.dirname(benchmark_dir), "torchtitan")
-    experiments_dir = os.path.join(repo_root, "torchtitan", "experiments")
-
-    # Add to path so we can import the module
-    if experiments_dir not in sys.path:
-        sys.path.insert(0, experiments_dir)
-
-    from ortho_matrix.ada_dion_v2.adadion_v2 import AdaDionV2
+    from adadion_v2.adadion_v2 import AdaDionV2
 
     groups = group_params_for_hybrid(model)
     param_groups = []
