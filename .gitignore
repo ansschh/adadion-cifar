@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+benchmark/data/
+benchmark/test_results/
+benchmark/results/
+torchtitan/
+.claude/
+*.pt
+*.pth
