@@ -198,11 +198,14 @@ def _create_dion(model: nn.Module, config) -> Optimizer:
 
 
 def _create_dion2(model: nn.Module, config) -> Optimizer:
-    """Dion2 for matrix params + AdamW for scalars."""
+    """Dion2 for 2D matrix params + AdamW for conv/scalars.
+
+    Dion2's @torch.compile(fullgraph=True) on dion2_pre_orthogonalize fails
+    with 3D+ tensors even with flatten=True, so conv params go to AdamW.
+    """
     from dion import Dion2
 
-    # Dion2 supports flatten=True
-    groups = group_params_for_hybrid(model, flatten_supported=True)
+    groups = group_params_for_hybrid(model, flatten_supported=False)
     param_groups = []
 
     if groups["matrix_params"]:
@@ -220,7 +223,7 @@ def _create_dion2(model: nn.Module, config) -> Optimizer:
         ef_decay=config.ef_decay,
         weight_decay=config.weight_decay,
         adjust_lr=adjust_lr,
-        flatten=getattr(config, "flatten", True),
+        flatten=False,
         use_triton=False,
     )
 
