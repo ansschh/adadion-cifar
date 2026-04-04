@@ -2,7 +2,8 @@
 Unified optimizer factory for CIFAR-10 benchmarking.
 
 Implements the hybrid param-grouping pattern from torchtitan:
-  - 2D+ weight matrices -> spectral optimizer (Muon/Dion/Dion2/AdaDion)
+  - 2D weight matrices -> spectral optimizer (Muon/Dion/Dion2/AdaDion)
+  - 4D conv weights -> spectral optimizer with flatten (Muon/Dion2) or AdamW (Dion)
   - 1D params (norms, biases) -> AdamW with no weight decay
   - Embedding-like params -> AdamW with separate LR
 
@@ -17,16 +18,28 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 
+# Increase torch.compile recompile limit for spectral optimizers
+# They use torch.compile internally and hit recompile limits with varied batch shapes
+try:
+    torch._dynamo.config.recompile_limit = 64
+    torch._dynamo.config.cache_size_limit = 64
+except Exception:
+    pass
 
-def group_params_for_hybrid(model: nn.Module):
+
+def group_params_for_hybrid(model: nn.Module, flatten_supported: bool = True):
     """
-    Split model parameters into matrix params (2D+) and scalar params (1D).
-    Mirrors the torchtitan param_grouper logic adapted for vision models.
+    Split model parameters into groups for hybrid spectral + AdamW optimization.
+
+    Args:
+        flatten_supported: If True, 3D+ tensors go to matrix_params (optimizer will flatten).
+                          If False, only 2D tensors go to matrix_params; 3D+ go to conv_params.
 
     Returns:
-        dict with keys: matrix_params, norm_params, embed_params, other_params
+        dict with keys: matrix_params, conv_params, norm_params, embed_params
     """
-    matrix_params = []
+    matrix_params = []  # 2D params -> always spectral
+    conv_params = []    # 4D params -> spectral (if flatten) or AdamW
     norm_params = []
     embed_params = []
 
@@ -40,12 +53,19 @@ def group_params_for_hybrid(model: nn.Module):
         # Embedding-like: cls_token, pos_embed (ViT specific)
         elif "cls_token" in name or "pos_embed" in name:
             embed_params.append(param)
-        # Everything else with ndim >= 2: conv weights, linear weights
-        else:
+        # 2D: linear weights -> always spectral
+        elif param.ndim == 2:
             matrix_params.append(param)
+        # 3D+: conv weights
+        else:
+            if flatten_supported:
+                matrix_params.append(param)
+            else:
+                conv_params.append(param)
 
     return {
         "matrix_params": matrix_params,
+        "conv_params": conv_params,
         "norm_params": norm_params,
         "embed_params": embed_params,
     }
@@ -96,18 +116,19 @@ def _create_adamw(model: nn.Module, config) -> Optimizer:
     )
 
 
-def _create_muon(model: nn.Module, config) -> Optimizer:
-    """Muon for matrix params + AdamW for scalars, using the dion package."""
-    from dion import Muon
-
-    groups = group_params_for_hybrid(model)
+def _build_scalar_groups(groups, config):
+    """Build AdamW param groups for non-matrix parameters."""
     param_groups = []
-
-    # Matrix params -> Muon
-    if groups["matrix_params"]:
-        param_groups.append({"params": groups["matrix_params"]})
-
-    # Scalar / norm params -> AdamW
+    # Conv params that can't be handled by spectral optimizer
+    if groups["conv_params"]:
+        param_groups.append({
+            "params": groups["conv_params"],
+            "algorithm": "adamw",
+            "lr": config.scalar_lr,
+            "weight_decay": getattr(config, "scalar_weight_decay", config.weight_decay),
+            "betas": config.scalar_betas,
+            "eps": config.scalar_eps,
+        })
     if groups["norm_params"]:
         param_groups.append({
             "params": groups["norm_params"],
@@ -117,8 +138,6 @@ def _create_muon(model: nn.Module, config) -> Optimizer:
             "betas": config.scalar_betas,
             "eps": config.scalar_eps,
         })
-
-    # Embedding params -> AdamW
     if groups["embed_params"]:
         param_groups.append({
             "params": groups["embed_params"],
@@ -128,6 +147,20 @@ def _create_muon(model: nn.Module, config) -> Optimizer:
             "betas": config.scalar_betas,
             "eps": config.scalar_eps,
         })
+    return param_groups
+
+
+def _create_muon(model: nn.Module, config) -> Optimizer:
+    """Muon for matrix params + AdamW for scalars, using the dion package."""
+    from dion import Muon
+
+    # Muon supports flatten=True, so 4D conv params go to matrix_params
+    groups = group_params_for_hybrid(model, flatten_supported=True)
+    param_groups = []
+
+    if groups["matrix_params"]:
+        param_groups.append({"params": groups["matrix_params"]})
+    param_groups.extend(_build_scalar_groups(groups, config))
 
     adjust_lr = config.adjust_lr if config.adjust_lr != "none" else None
     return Muon(
@@ -138,38 +171,21 @@ def _create_muon(model: nn.Module, config) -> Optimizer:
         nesterov=config.nesterov,
         adjust_lr=adjust_lr,
         flatten=config.flatten,
+        use_triton=False,
     )
 
 
 def _create_dion(model: nn.Module, config) -> Optimizer:
-    """Dion for matrix params + AdamW for scalars."""
+    """Dion for 2D matrix params + AdamW for conv/scalars (Dion doesn't support flatten)."""
     from dion import Dion
 
-    groups = group_params_for_hybrid(model)
+    # Dion does NOT support flatten, so 4D conv params go to AdamW
+    groups = group_params_for_hybrid(model, flatten_supported=False)
     param_groups = []
 
     if groups["matrix_params"]:
         param_groups.append({"params": groups["matrix_params"]})
-
-    if groups["norm_params"]:
-        param_groups.append({
-            "params": groups["norm_params"],
-            "algorithm": "adamw",
-            "lr": config.scalar_lr,
-            "weight_decay": 0.0,
-            "betas": config.scalar_betas,
-            "eps": config.scalar_eps,
-        })
-
-    if groups["embed_params"]:
-        param_groups.append({
-            "params": groups["embed_params"],
-            "algorithm": "adamw",
-            "lr": config.scalar_lr,
-            "weight_decay": config.scalar_weight_decay,
-            "betas": config.scalar_betas,
-            "eps": config.scalar_eps,
-        })
+    param_groups.extend(_build_scalar_groups(groups, config))
 
     return Dion(
         param_groups,
@@ -183,31 +199,13 @@ def _create_dion2(model: nn.Module, config) -> Optimizer:
     """Dion2 for matrix params + AdamW for scalars."""
     from dion import Dion2
 
-    groups = group_params_for_hybrid(model)
+    # Dion2 supports flatten=True
+    groups = group_params_for_hybrid(model, flatten_supported=True)
     param_groups = []
 
     if groups["matrix_params"]:
         param_groups.append({"params": groups["matrix_params"]})
-
-    if groups["norm_params"]:
-        param_groups.append({
-            "params": groups["norm_params"],
-            "algorithm": "adamw",
-            "lr": config.scalar_lr,
-            "weight_decay": 0.0,
-            "betas": config.scalar_betas,
-            "eps": config.scalar_eps,
-        })
-
-    if groups["embed_params"]:
-        param_groups.append({
-            "params": groups["embed_params"],
-            "algorithm": "adamw",
-            "lr": config.scalar_lr,
-            "weight_decay": config.scalar_weight_decay,
-            "betas": config.scalar_betas,
-            "eps": config.scalar_eps,
-        })
+    param_groups.extend(_build_scalar_groups(groups, config))
 
     adjust_lr = getattr(config, "adjust_lr", "spectral_norm")
     if adjust_lr == "none":
@@ -221,38 +219,21 @@ def _create_dion2(model: nn.Module, config) -> Optimizer:
         weight_decay=config.weight_decay,
         adjust_lr=adjust_lr,
         flatten=getattr(config, "flatten", True),
+        use_triton=False,
     )
 
 
 def _create_adadion(model: nn.Module, config) -> Optimizer:
-    """AdaDion V2 for matrix params + AdamW for scalars."""
+    """AdaDion V2 for 2D matrix params + AdamW for conv/scalars (no flatten support)."""
     from adadion_v2.adadion_v2 import AdaDionV2
 
-    groups = group_params_for_hybrid(model)
+    # AdaDion V2 does NOT support flatten, conv params go to AdamW
+    groups = group_params_for_hybrid(model, flatten_supported=False)
     param_groups = []
 
     if groups["matrix_params"]:
         param_groups.append({"params": groups["matrix_params"]})
-
-    if groups["norm_params"]:
-        param_groups.append({
-            "params": groups["norm_params"],
-            "algorithm": "adamw",
-            "lr": config.scalar_lr,
-            "weight_decay": 0.0,
-            "betas": config.scalar_betas,
-            "eps": config.scalar_eps,
-        })
-
-    if groups["embed_params"]:
-        param_groups.append({
-            "params": groups["embed_params"],
-            "algorithm": "adamw",
-            "lr": config.scalar_lr,
-            "weight_decay": config.scalar_weight_decay,
-            "betas": config.scalar_betas,
-            "eps": config.scalar_eps,
-        })
+    param_groups.extend(_build_scalar_groups(groups, config))
 
     return AdaDionV2(
         param_groups,
