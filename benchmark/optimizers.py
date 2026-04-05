@@ -101,9 +101,9 @@ def create_optimizer(model: nn.Module, opt_config):
     name = opt_config.name
     wrapper = None
 
-    # Dion and AdaDion require 2D params — create a wrapper that will
+    # Dion, Dion2, and AdaDion require 2D params — create a wrapper that will
     # flatten/unflatten around each optimizer step
-    if name in ("dion", "adadion"):
+    if name in ("dion", "dion2", "adadion"):
         wrapper = FlattenedParamWrapper()
         for n, p in model.named_parameters():
             if p.requires_grad and p.ndim > 2 and "cls_token" not in n and "pos_embed" not in n:
@@ -228,7 +228,11 @@ def _create_dion(model: nn.Module, config) -> Optimizer:
 
 
 def _create_dion2(model: nn.Module, config) -> Optimizer:
-    """Dion2 for all weight params + AdamW for scalars. Uses flatten internally."""
+    """Dion2 for all weight params + AdamW for scalars.
+
+    Dion2's torch.compile(fullgraph=True) on dion2_pre_orthogonalize has a bug
+    with flatten=True, so we pre-flatten via FlattenedParamWrapper instead.
+    """
     from dion import Dion2
 
     groups = group_params_for_hybrid(model)
@@ -249,7 +253,7 @@ def _create_dion2(model: nn.Module, config) -> Optimizer:
         ef_decay=config.ef_decay,
         weight_decay=config.weight_decay,
         adjust_lr=adjust_lr,
-        flatten=True,
+        flatten=False,
         use_triton=False,
     )
 
