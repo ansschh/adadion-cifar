@@ -233,12 +233,16 @@ def train_one_run(
     # LR Scheduler
     scheduler = create_lr_scheduler(optimizer, base_config, steps_per_epoch)
 
-    # Mixed precision
+    # Mixed precision: use autocast for forward pass speed, but disable
+    # GradScaler for spectral optimizers — their @torch.compile internals
+    # conflict with the scale/unscale/inf-check pattern.
+    is_spectral = opt_config.name in ("muon", "dion", "dion2", "adadion")
     use_amp = base_config.mixed_precision and torch.cuda.is_available()
+    use_scaler = use_amp and (not is_spectral)
     try:
-        scaler = GradScaler("cuda", enabled=use_amp)
+        scaler = GradScaler("cuda", enabled=use_scaler)
     except TypeError:
-        scaler = GradScaler(enabled=use_amp)
+        scaler = GradScaler(enabled=use_scaler)
 
     # Metrics
     metrics = MetricsCollector(output_dir, run_name)

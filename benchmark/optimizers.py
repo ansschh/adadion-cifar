@@ -18,13 +18,11 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW, Optimizer
 
-# Spectral optimizers use @torch.compile internally. On vision models with varied
-# tensor shapes (4D conv, 2D linear, etc.) this causes recompile limit hits and
-# shape-tracing errors. Suppress errors so compile falls back to eager mode.
+# Spectral optimizers use @torch.compile internally. Increase cache limits
+# for varied tensor shapes in vision models.
 try:
     torch._dynamo.config.recompile_limit = 64
     torch._dynamo.config.cache_size_limit = 64
-    torch._dynamo.config.suppress_errors = True
 except Exception:
     pass
 

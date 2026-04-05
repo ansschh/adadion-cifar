@@ -409,13 +409,11 @@ class AdaDionV2(Optimizer):
                         ada_states=ada_states,
                         ada_config=self._ada_config if self._adaptive_rank else None,
                     )
-                    # outer_shard_mesh is only accepted by FSDP update paths
+                    # dion_update_ddp does not accept outer_shard_mesh
                     if use_dtensor:
                         update_kwargs["outer_shard_mesh"] = self._outer_shard_mesh
 
-                    yield AsyncTask(
-                        dion_update_func(**update_kwargs)
-                    )
+                    yield AsyncTask(dion_update_func(**update_kwargs))
 
     def _create_lion_tasks(
         self,
