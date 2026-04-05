@@ -227,22 +227,21 @@ def train_one_run(
     )
 
     # Optimizer
-    optimizer = create_optimizer(model, opt_config)
+    optimizer, flatten_wrapper = create_optimizer(model, opt_config)
     logger.info(f"Optimizer: {opt_config.name}")
 
     # LR Scheduler
     scheduler = create_lr_scheduler(optimizer, base_config, steps_per_epoch)
 
-    # Mixed precision: use autocast for forward pass speed, but disable
-    # GradScaler for spectral optimizers — their @torch.compile internals
-    # conflict with the scale/unscale/inf-check pattern.
+    # Mixed precision: disable entirely for spectral optimizers.
+    # Their @torch.compile internals conflict with fp16 gradients
+    # and the GradScaler scale/unscale/inf-check pattern.
     is_spectral = opt_config.name in ("muon", "dion", "dion2", "adadion")
-    use_amp = base_config.mixed_precision and torch.cuda.is_available()
-    use_scaler = use_amp and (not is_spectral)
+    use_amp = base_config.mixed_precision and torch.cuda.is_available() and (not is_spectral)
     try:
-        scaler = GradScaler("cuda", enabled=use_scaler)
+        scaler = GradScaler("cuda", enabled=use_amp)
     except TypeError:
-        scaler = GradScaler(enabled=use_scaler)
+        scaler = GradScaler(enabled=use_amp)
 
     # Metrics
     metrics = MetricsCollector(output_dir, run_name)
@@ -303,9 +302,17 @@ def train_one_run(
             else:
                 grad_norm = compute_gradient_norm(model)
 
+            # Flatten conv params to 2D for Dion/AdaDion optimizer step
+            if flatten_wrapper:
+                flatten_wrapper.flatten_for_optimizer()
+
             scaler.step(optimizer)
             scaler.update()
             scheduler.step()
+
+            # Restore conv params to 4D for model forward pass
+            if flatten_wrapper:
+                flatten_wrapper.restore_shapes()
 
             # Track accuracy
             with torch.no_grad():

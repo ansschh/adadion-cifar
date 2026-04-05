@@ -106,26 +106,26 @@ class Dion2Config:
 
 @dataclass
 class AdaDionConfig:
-    """AdaDion V2 hyperparameters for CIFAR-10."""
+    """AdaDion V2 hyperparameters for CIFAR-10. Aligned with official config_registry.py."""
     name: str = "adadion"
     # Matrix params (AdaDion)
-    lr: float = 0.02
+    lr: float = 0.012
     mu: float = 0.95
     rank_fraction_max: float = 0.7
-    weight_decay: float = 0.01
-    # Adaptive rank
+    weight_decay: float = 0.1
+    # Adaptive rank — aligned with official defaults
     adaptive_rank: bool = True
-    init_rank_fraction: float = 0.25
+    init_rank_fraction: float = 0.5
     erank_ema_beta: float = 0.5
     rank_scale: float = 1.5
-    rank_min: int = 8
-    rank_quantize: int = 4
-    rank_step_up: int = 8
-    rank_step_down: int = 4
+    rank_min: int = 16
+    rank_quantize: int = 8
+    rank_step_up: int = 16
+    rank_step_down: int = 8
     # Scalar params (AdamW)
-    scalar_lr: float = 1e-3
-    scalar_betas: tuple = (0.9, 0.999)
-    scalar_weight_decay: float = 0.05
+    scalar_lr: float = 0.012
+    scalar_betas: tuple = (0.95, 0.95)
+    scalar_weight_decay: float = 0.1
     scalar_eps: float = 1e-8
 
 
