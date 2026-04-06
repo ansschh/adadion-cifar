@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-AdaDion V2 achieves **96.30%** on CIFAR-10 ResNet-18, beating Dion (96.04%), Muon (95.87%), and AdamW (95.30%). Getting there required fixing three critical bugs and a proper hyperparameter sweep. This document details the full investigation.
+AdaDion V2 achieves **96.20 +/- 0.12%** on CIFAR-10 ResNet-18 (3 seeds), beating Dion (95.97%), Muon (95.87%), Dion2 (95.88%), and AdamW (95.29%). On ViT-Small, the Dion family (Dion 92.38%, AdaDion 92.25%, Dion2 92.24%) dominates Muon (88.86%) and AdamW (83.65%). Getting there required fixing three critical bugs and a proper hyperparameter sweep. This document details the full investigation.
 
 ---
 
@@ -160,14 +160,54 @@ AdaDion V2 on ResNet-18 CIFAR-10:
 
 6. **Context matters.** Tatsu's results (LLaMA 320M on C4) used the torchtitan distributed framework with 8x A40, FSDP, and natively 2D transformer weights. Our CIFAR-10 setup required different LR tuning and explicit conv weight flattening.
 
-## 5. Comparison with Tatsu's Setup
+## 5. Final Benchmark Results (3 seeds, 100 epochs)
+
+### ResNet-18 CIFAR-10
+
+| Optimizer | Seed 42 | Seed 123 | Seed 456 | Mean +/- Std | Val Loss |
+|-----------|---------|----------|----------|--------------|----------|
+| **AdaDion V2** | 96.23% | 96.04% | **96.33%** | **96.20 +/- 0.12%** | **0.2055** |
+| Dion | 96.04% | 95.95% | 95.93% | 95.97 +/- 0.05% | 0.2150 |
+| Dion2 | 95.89% | 96.02% | 95.74% | 95.88 +/- 0.11% | 0.2153 |
+| Muon | 95.87% | 95.73% | 96.01% | 95.87 +/- 0.11% | 0.2175 |
+| AdamW | 95.30% | 95.23% | 95.35% | 95.29 +/- 0.05% | 0.2325 |
+
+### ViT-Small CIFAR-10
+
+| Optimizer | Val Acc | Val Loss | Time (s) | Memory (MB) |
+|-----------|---------|----------|----------|-------------|
+| Dion | 92.38% | 0.3255 | 2069 | 1451 |
+| **AdaDion V2** | 92.25% | 0.3197 | 1773 | 1459 |
+| Dion2 | 92.24% | 0.3230 | 1317 | 1448 |
+| Muon | 88.86% | 0.3877 | 1230 | 1448 |
+| AdamW | 83.65% | 0.5285 | 901 | 1488 |
+
+### ViT-Small AdaDion LR Sweep
+
+| LR | Val Acc | Val Loss |
+|----|---------|----------|
+| 0.001 | 90.41% | 0.3757 |
+| 0.002 | 91.75% | 0.3353 |
+| **0.005** | **92.25%** | **0.3197** |
+| 0.01 | 91.15% | 0.3356 |
+| 0.02 | 87.63% | 0.4205 |
+
+## 6. Comparison with Tatsu's Setup
+
+Tatsu ran AdaDion on LLaMA 320M pretraining (C4 dataset, 8x A40, FSDP):
+```
+NCCL_P2P_DISABLE=1 bash env/runpod/run.sh \
+  -m ortho_matrix.ada_dion_v2 -c llama3_320m_adadion_v2 \
+  -l 16 -n "rank_scale_20" -- --optimizer.rank_scale 2.0
+```
 
 | Aspect | Tatsu's Setup | Our Setup |
 |--------|--------------|-----------|
-| Model | LLaMA3 320M (324M params) | ResNet-18 (11M params) |
+| Model | LLaMA3 320M (324M params) | ResNet-18 (11M) / ViT-Small (10.7M) |
 | Dataset | C4 (language modeling) | CIFAR-10 (classification) |
-| Weight types | 100% 2D linear | ~99.9% 4D conv |
-| GPUs | 8x A40, FSDP | 1x GPU |
+| Weight types | 100% 2D linear | ResNet: 99.9% 4D conv / ViT: 99.7% 2D |
+| GPUs | 8x A40, FSDP | 1x RTX 5090 |
 | Framework | torchtitan + torchrun | Custom training loop |
-| LR | 0.012 | 0.01 (found via sweep) |
+| LR | 0.012 | 0.01 (ResNet) / 0.005 (ViT) |
 | rank_scale | 2.0 | 1.5 (default) |
+| Result | AdaDion beats Muon/Dion on val loss | AdaDion best on ResNet, tied on ViT |
