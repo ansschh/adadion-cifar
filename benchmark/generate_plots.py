@@ -426,8 +426,6 @@ def main():
     parser.add_argument("--plot_dir", default="./results/plots")
     args = parser.parse_args()
 
-    import argparse  # already imported at top
-
     os.makedirs(args.plot_dir, exist_ok=True)
 
     print("Generating plots...")
@@ -442,5 +440,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import argparse
     main()
