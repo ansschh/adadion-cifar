@@ -15,6 +15,7 @@ Plots:
   10. Convergence speed (epochs to reach target accuracy)
 """
 
+import argparse
 import json
 import os
 import sys
