@@ -45,17 +45,22 @@ except ImportError:
 
 
 def get_data_loaders(dataset="cifar10", batch_size=128, num_workers=4, seed=42):
+    if dataset == "cifar100":
+        mean, std = (0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)
+    else:
+        mean, std = (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
+
     train_transform = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
         transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10),
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+        transforms.Normalize(mean, std),
         transforms.RandomErasing(p=0.1),
     ])
     test_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+        transforms.Normalize(mean, std),
     ])
 
     DatasetClass = datasets.CIFAR10 if dataset == "cifar10" else datasets.CIFAR100
