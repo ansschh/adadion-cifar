@@ -297,7 +297,18 @@ AdaDion V2 tracks the effective rank of each layer's gradient momentum buffer $M
 
 We tracked rank per layer across 100 epochs on ResNet-18. The behavior depends on layer dimensions:
 
-\textbf{Small layers.} The final linear layer ($10 \times 512$) has $r_\text{cap} = \lfloor 0.7 \times 10 \rfloor = 7$. Since rank\_min $= 16 > r_\text{cap}$, the rank saturates at $r = 7$ from initialization and remains constant throughout training. The adaptive mechanism has no room to adjust.
+Figure~\ref{fig:rank_dynamics} shows how effective rank and actual rank evolve over 19,500 training steps for six values of $\gamma$. The effective rank (left) starts high ($\sim$155) and gradually decreases to $\sim$130 as training progresses and the gradient structure simplifies. This decrease is consistent across all $\gamma$ values, confirming it reflects an intrinsic property of the optimization landscape rather than an artifact of the rank selection rule.
+
+The actual rank (right) shows clear stratification by $\gamma$. Low values ($\gamma = 0.5, 1.0$) keep rank near rank\_min $= 16$, compressing aggressively but sacrificing accuracy (95.81\%, 95.76\%). Higher values ($\gamma = 2.0$--$2.5$) maintain rank around 175--200, tracking the effective rank with a buffer. At $\gamma = 3.0$, the rank saturates near the maximum and provides diminishing returns (95.99\%). The gradual rank decrease at $\gamma = 1.5$ (from 200 to 150 over training) demonstrates the adaptive mechanism responding to the declining effective rank.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/rank_dynamics.pdf}
+\caption{Rank dynamics across training for different rank scale factors $\gamma$ (ResNet-18 CIFAR-10, rank fraction 1.0). Left: observed effective rank decreases as training progresses. Right: actual rank used by AdaDion, showing clear stratification by $\gamma$.}
+\label{fig:rank_dynamics}
+\end{figure*}
+
+\textbf{Small layers.} The final linear layer ($10 \times 512$) has $r_\text{cap} = \lfloor 1.0 \times 10 \rfloor = 10$. Since rank\_min $= 16 > r_\text{cap}$, the rank saturates at $r = 10$ from initialization. The adaptive mechanism has no room to adjust.
 
 \textbf{Large layers.} The flattened convolutional layers (e.g., $512 \times 4608$ from a $512 \times 512 \times 3 \times 3$ convolution) have $r_\text{cap} = \lfloor 0.7 \times 512 \rfloor = 358$ with rank\_min $= 16$, providing a range of $[16, 358]$. With init\_rank\_fraction $= 0.5$, training starts at $r \approx 256$. The ablation over rank fractions (Table~\ref{tab:ablation}) shows that the optimizer converges to using approximately 50\% of the maximum rank, consistent with the finding that rf=0.5 is optimal.
 
