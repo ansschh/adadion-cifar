@@ -107,16 +107,13 @@ def run_single(rank_scale, epochs, output_dir, gpu_id=0):
             if flatten_wrapper:
                 flatten_wrapper.flatten_for_optimizer()
             optimizer.step()
-            scheduler.step()
-            if flatten_wrapper:
-                flatten_wrapper.restore_shapes()
 
-            # Collect rank info every step
+            # Collect rank info WHILE PARAMS ARE STILL FLATTENED
+            # so the optimizer can find all params in its state dict
             entry = {"step": global_step, "loss": loss.item()}
 
             if hasattr(optimizer, "get_rank"):
                 ranks = optimizer.get_rank()
-                # Average across all tracked params
                 if ranks:
                     entry["rank"] = np.mean(list(ranks.values()))
                     entry["rank_per_param"] = ranks
@@ -126,6 +123,10 @@ def run_single(rank_scale, epochs, output_dir, gpu_id=0):
                 if eranks:
                     entry["erank"] = np.mean(list(eranks.values()))
                     entry["erank_per_param"] = eranks
+
+            scheduler.step()
+            if flatten_wrapper:
+                flatten_wrapper.restore_shapes()
 
             step_data.append(entry)
             global_step += 1
