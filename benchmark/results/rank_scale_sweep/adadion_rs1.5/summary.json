@@ -1,0 +1,15 @@
+{
+  "run_name": "adadion_rs1.5",
+  "final_train_loss": 0.5750860720108717,
+  "final_train_acc": 96.73878205128204,
+  "final_val_loss": 0.20673511519432067,
+  "final_val_acc": 96.14,
+  "final_val_top5_acc": 99.71,
+  "best_val_acc": 96.2,
+  "best_val_epoch": 98,
+  "total_epochs": 100,
+  "total_train_time_sec": 3140.7121952027082,
+  "avg_step_time_ms": 77.74381879686068,
+  "avg_throughput_samples_sec": 1665.9180585153465,
+  "peak_gpu_mem_mb": 717.056640625
+}

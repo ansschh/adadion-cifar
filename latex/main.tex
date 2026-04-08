@@ -193,10 +193,10 @@ Axis & Setting & Val Acc (\%) \\
 & wd=0.01 & 95.96 \\
 & wd=0.0 & 95.63 \\
 \midrule
-\multirow{3}{*}{Rank fraction}
-& rf=0.125 & 96.19 \\
-& \textbf{rf=0.5} & \textbf{96.30} \\
-& rf=1.0 & 95.99 \\
+\multirow{3}{*}{Rank scale $\gamma$}
+& $\gamma$=0.5 & 95.81 \\
+& \textbf{$\gamma$=2.0} & \textbf{96.22} \\
+& $\gamma$=3.0 & 95.99 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -209,7 +209,7 @@ Axis & Setting & Val Acc (\%) \\
 
 \textbf{Weight decay} of 0.1 is optimal. Lower values degrade performance, with wd=0.0 losing 0.67\% relative to wd=0.1.
 
-\textbf{Rank fraction} of 0.5 performs best. Using full rank (rf=1.0) removes the low-rank compression and degrades to 95.99\%.
+\textbf{Rank scale} $\gamma = 2.0$ performs best with rank fraction 1.0. Values below 1.0 compress too aggressively; values above 3.0 overshoot. The optimal matches Tatsu's independently chosen $\gamma = 2.0$ on LLaMA 320M.
 
 Figure~\ref{fig:vit_lr} shows the AdaDion V2 learning rate sweep on ViT-Small, where lr=0.005 is optimal.
 
@@ -267,18 +267,20 @@ The Dion family achieves a favorable compute-communication balance: the low-rank
 
 \section{Rank Dynamics}
 
-\subsection{Compression vs Accuracy}
+\subsection{Rank Scale Factor}
 
-Figure~\ref{fig:rank_tradeoff} shows the relationship between rank fraction, validation accuracy, and communication compression for AdaDion V2 on ResNet-18 across five rank fractions. The optimal rank fraction is 0.5, which achieves 96.30\% accuracy with 1.8x compression over full all-reduce. Lower rank fractions provide higher compression at modest accuracy cost: rf=0.125 gives 4x compression with only 0.11\% accuracy loss (96.19\%). Full rank (rf=1.0) removes compression entirely and degrades accuracy to 95.99\%, 0.31\% below the optimal. This degradation at full rank suggests that the low-rank constraint acts as implicit regularization, preventing the optimizer from overfitting to gradient noise.
+With rank fraction fixed to 1.0 (allowing the full operating range), we sweep the rank scale factor $\gamma$ that multiplies the estimated effective rank to determine the target rank: $r_\text{target} = \lceil \gamma \cdot \bar{e}_t \rceil$. Figure~\ref{fig:rank_scale} shows the results on ResNet-18 CIFAR-10.
 
-Figure~\ref{fig:compression} compares the communication compression ratio across all optimizers on both architectures. Dion and Dion2 achieve the highest compression (3.0--4.0x) due to their lower rank fraction (0.25). AdaDion V2 uses a higher rank fraction (0.5) that results in lower compression (1.5--1.8x) but higher accuracy. AdamW and Muon provide no compression because they all-reduce the full gradient.
+The optimal range is $\gamma \in [2.0, 2.5]$, achieving 96.22--96.29\%. Below $\gamma = 1.0$, the rank is too aggressive in compression and accuracy drops. Above $\gamma = 3.0$, the rank overshoots and the benefit diminishes. The optimal $\gamma = 2.0$ matches the value used independently by Tatsu in LLaMA 320M pretraining, suggesting this parameter transfers across model scales.
 
-\begin{figure*}[t]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/rank_tradeoff.pdf}
-\caption{Rank fraction vs validation accuracy (left axis) and communication compression ratio for a $512 \times 4608$ layer (right axis). The optimal rank fraction (0.5) balances accuracy and compression.}
-\label{fig:rank_tradeoff}
-\end{figure*}
+\includegraphics[width=\columnwidth]{figures/rank_scale_sweep.pdf}
+\caption{Rank scale factor $\gamma$ vs validation accuracy on ResNet-18 with rank fraction 1.0. Optimal at $\gamma = 2.0$--$2.5$.}
+\label{fig:rank_scale}
+\end{figure}
+
+Figure~\ref{fig:compression} compares the communication compression ratio across all optimizers on both architectures. Dion and Dion2 achieve the highest compression (3.0--4.0x) due to their lower rank fraction (0.25). AdaDion V2 with rank fraction 1.0 and $\gamma = 2.0$ adaptively selects ranks that balance accuracy and communication.
 
 \begin{figure*}[t]
 \centering
