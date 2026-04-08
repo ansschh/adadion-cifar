@@ -140,23 +140,14 @@ AdamW & 86.24 & 0.5285 \\
 
 \subsection{Convergence and Throughput}
 
-Figure~\ref{fig:perf} shows convergence speed and training cost. AdaDion V2 and Dion reach 95\% accuracy fastest. Spectral optimizers incur higher per-step cost than AdamW due to orthogonalization: AdamW completes 100 epochs in 712s, while AdaDion takes 1546s and Muon takes 1285s. This overhead comes from QR decomposition and rank adaptation (AdaDion) or Newton-Schulz iteration (Muon) at each step.
+Figure~\ref{fig:convergence} shows convergence speed. AdaDion V2 and Dion reach 95\% accuracy fastest, while AdamW requires more epochs at every threshold.
 
-% Full-width figure combining convergence + throughput
-\begin{figure*}[t]
+\begin{figure}[t]
 \centering
-\begin{minipage}[t]{0.48\textwidth}
-\centering
-\includegraphics[width=\textwidth]{figures/convergence.pdf}
-\end{minipage}
-\hfill
-\begin{minipage}[t]{0.48\textwidth}
-\centering
-\includegraphics[width=\textwidth]{figures/throughput.pdf}
-\end{minipage}
-\caption{Left: epochs required to reach target validation accuracy on ResNet-18. Right: total training time and average throughput (ResNet-18, seed 42).}
-\label{fig:perf}
-\end{figure*}
+\includegraphics[width=\columnwidth]{figures/convergence.pdf}
+\caption{Epochs to reach target accuracy (ResNet-18, 3 seeds).}
+\label{fig:convergence}
+\end{figure}
 
 \section{Ablation}
 
@@ -211,14 +202,7 @@ Axis & Setting & Val Acc (\%) \\
 
 \textbf{Rank scale} $\gamma = 2.0$ performs best with rank fraction 1.0. Values below 1.0 compress too aggressively; values above 3.0 overshoot. The optimal matches Tatsu's independently chosen $\gamma = 2.0$ on LLaMA 320M.
 
-Figure~\ref{fig:vit_lr} shows the AdaDion V2 learning rate sweep on ViT-Small, where lr=0.005 is optimal.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/vit_lr_sweep.pdf}
-\caption{AdaDion V2 learning rate sweep on ViT-Small.}
-\label{fig:vit_lr}
-\end{figure}
+Figure~\ref{fig:sweeps} shows the rank scale sweep (left) and ViT-Small learning rate sweep (right).
 
 \section{Communication Overhead}
 
@@ -258,10 +242,19 @@ We measured per-step wall-clock time using DDP with 4$\times$A100-80GB GPUs on R
 
 The Dion family achieves a favorable compute-communication balance: the low-rank projection adds local compute cost but reduces communication volume, resulting in 3.5--6.7x faster training than Muon on 4 GPUs. As GPU count increases and communication becomes the bottleneck, this advantage grows.
 
+% Combined: throughput + communication
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.95\textwidth]{figures/communication.pdf}
-\caption{Estimated communication cost per step for each optimizer under DDP ring all-reduce. Values above bars show MB transferred and compression ratio.}
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/throughput.pdf}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/communication.pdf}
+\end{minipage}
+\caption{Left: training time and throughput (ResNet-18, seed 42). Right: communication cost per step under DDP ring all-reduce.}
 \label{fig:comm}
 \end{figure*}
 
@@ -269,25 +262,34 @@ The Dion family achieves a favorable compute-communication balance: the low-rank
 
 \subsection{Rank Scale Factor}
 
-With rank fraction fixed to 1.0 (allowing the full operating range), we sweep the rank scale factor $\gamma$ that multiplies the estimated effective rank to determine the target rank: $r_\text{target} = \lceil \gamma \cdot \bar{e}_t \rceil$. Figure~\ref{fig:rank_scale} shows the results on ResNet-18 CIFAR-10.
+With rank fraction fixed to 1.0 (allowing the full operating range), we sweep the rank scale factor $\gamma$ that multiplies the estimated effective rank to determine the target rank: $r_\text{target} = \lceil \gamma \cdot \bar{e}_t \rceil$.
 
 The optimal range is $\gamma \in [2.0, 2.5]$, achieving 96.22--96.29\%. Below $\gamma = 1.0$, the rank is too aggressive in compression and accuracy drops. Above $\gamma = 3.0$, the rank overshoots and the benefit diminishes. The optimal $\gamma = 2.0$ matches the value used independently by Tatsu in LLaMA 320M pretraining, suggesting this parameter transfers across model scales.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/rank_scale_sweep.pdf}
-\caption{Rank scale factor $\gamma$ vs validation accuracy on ResNet-18 with rank fraction 1.0. Optimal at $\gamma = 2.0$--$2.5$.}
-\label{fig:rank_scale}
-\end{figure}
-
-Figure~\ref{fig:compression} compares the communication compression ratio across all optimizers on both architectures. Dion and Dion2 achieve the highest compression (3.0--4.0x) due to their lower rank fraction (0.25). AdaDion V2 with rank fraction 1.0 and $\gamma = 2.0$ adaptively selects ranks that balance accuracy and communication.
-
+% Combined: rank scale + ViT LR sweep
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.85\textwidth]{figures/compression_ratio.pdf}
-\caption{Communication compression ratio relative to full gradient all-reduce on both architectures.}
-\label{fig:compression}
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/rank_scale_sweep.pdf}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/vit_lr_sweep.pdf}
+\end{minipage}
+\caption{Left: rank scale factor $\gamma$ vs accuracy on ResNet-18 (rank fraction 1.0). Right: AdaDion V2 learning rate sweep on ViT-Small.}
+\label{fig:sweeps}
 \end{figure*}
+
+Figure~\ref{fig:compression} compares the communication compression ratio across optimizers. Dion and Dion2 achieve the highest compression (3.0--4.0x). AdaDion V2 with $\gamma = 2.0$ adaptively selects ranks that balance accuracy and communication.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\columnwidth]{figures/compression_ratio.pdf}
+\caption{Compression ratio relative to full all-reduce.}
+\label{fig:compression}
+\end{figure}
 
 \subsection{Rank Evolution During Training}
 
