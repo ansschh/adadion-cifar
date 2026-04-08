@@ -368,35 +368,49 @@ def fig9():
 # Fig 10: Wide ResNet scaling
 # ═══════════════════════════════════════════════════════════════
 def fig10():
-    sfiles = sorted(glob.glob("results/wide_resnet/**/summary.json", recursive=True))
-    if not sfiles: print("  SKIP wrn_scaling"); return
-    runs = {}
-    for s in sfiles:
-        with open(s) as f: r = json.load(f)
-        runs[(r["model"], r["optimizer"])] = r
-
+    """WRN scaling: side-by-side CIFAR-10 and CIFAR-100."""
     widths = ["wrn-28-2", "wrn-28-4", "wrn-28-10"]
-    params = {"wrn-28-2": "1.5M", "wrn-28-4": "5.9M", "wrn-28-10": "36.5M"}
-    fig, ax = plt.subplots(figsize=(5.5, 3.5))
+    params_labels = {"wrn-28-2": "1.5M", "wrn-28-4": "5.9M", "wrn-28-10": "36.5M"}
     opts_here = ["adadion", "dion", "muon", "adamw"]
-    for opt in opts_here:
-        vals = []
-        for w in widths:
-            key = (w, opt)
-            if key in runs:
-                vals.append(runs[key]["best_val_acc"])
-            else:
-                vals.append(None)
-        valid_x = [i for i,v in enumerate(vals) if v is not None]
-        valid_y = [v for v in vals if v is not None]
-        ax.plot(valid_x, valid_y, color=COLORS[opt], marker="o", linewidth=1.8,
-                markersize=7, markeredgewidth=0, label=LABELS[opt])
 
-    ax.set_xticks(range(len(widths)))
-    ax.set_xticklabels([f"{w}\n({params[w]})" for w in widths], fontsize=8)
-    ax.set_xlabel("Model (parameters)")
-    ax.set_ylabel("Validation accuracy (%)")
-    ax.legend(framealpha=0.7, edgecolor="none"); grid(ax)
+    # Load CIFAR-10
+    c10_runs = {}
+    for s in glob.glob("results/wide_resnet/**/summary.json", recursive=True):
+        with open(s) as f: r = json.load(f)
+        c10_runs[(r["model"], r["optimizer"])] = r
+
+    # Load CIFAR-100
+    c100_runs = {}
+    for s in glob.glob("results/cifar100_scaling/**/summary.json", recursive=True):
+        with open(s) as f: r = json.load(f)
+        c100_runs[(r["model"], r["optimizer"])] = r
+
+    if not c10_runs and not c100_runs:
+        print("  SKIP wrn_scaling"); return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 3.5))
+
+    for ax, runs, title in [(ax1, c10_runs, "CIFAR-10"), (ax2, c100_runs, "CIFAR-100")]:
+        if not runs:
+            ax.set_title(title); continue
+        for opt in opts_here:
+            vals = []
+            for w in widths:
+                key = (w, opt)
+                if key in runs: vals.append(runs[key]["best_val_acc"])
+                else: vals.append(None)
+            vx = [i for i,v in enumerate(vals) if v is not None]
+            vy = [v for v in vals if v is not None]
+            ax.plot(vx, vy, color=COLORS[opt], marker="o", linewidth=1.8,
+                    markersize=7, markeredgewidth=0, label=LABELS[opt])
+
+        ax.set_xticks(range(len(widths)))
+        ax.set_xticklabels([f"{w}\n({params_labels[w]})" for w in widths], fontsize=8)
+        ax.set_xlabel("Model (parameters)")
+        ax.set_ylabel("Validation accuracy (%)")
+        ax.set_title(title)
+        ax.legend(framealpha=0.7, edgecolor="none", fontsize=7); grid(ax)
+
     plt.tight_layout()
     fig.savefig(f"{OUT}/wrn_scaling.pdf", format="pdf"); plt.close()
     print("  wrn_scaling.pdf")
